@@ -7,7 +7,7 @@ import org.springframework.http.HttpStatus;
 public enum ReservationTimeErrorCode implements ErrorCode {
 
     INVALID_RESERVATION_TIME(HttpStatus.BAD_REQUEST,
-        "예약 시간 식별자 정보가 누락되었습니다.", "timeId 필드 포함 여부를 확인하십시오."),
+        "예약 시간 식별자 혹은 데이터가 누락되었습니다.", "timeId 필드 포함 여부 및 데이터 형식을 확인하십시오."),
     RESERVATION_TIME_NOT_EXIST(HttpStatus.NOT_FOUND,
         "지정한 식별자에 해당하는 예약 시간 엔티티를 찾을 수 없습니다.", "요청한 시간 ID의 유효성 및 DB 존재 여부를 확인하십시오."),
     RESERVATION_TIME_IN_USE(HttpStatus.CONFLICT,
