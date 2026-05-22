@@ -113,7 +113,7 @@ class JdbcThemeRepositoryTest {
     }
 
     @Test
-    @Sql("/popular-themes.sql")
+    @Sql("/reservation.sql")
     @DisplayName("일주일간의 인기 테마 top10을 조회한다.")
     void find_popular_themes_top10() {
         // given

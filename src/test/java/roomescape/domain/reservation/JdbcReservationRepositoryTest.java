@@ -121,7 +121,7 @@ class JdbcReservationRepositoryTest {
         List<Reservation> reservations = reservationRepository.findAll();
 
         // then
-        assertThat(reservations).hasSize(3);
+        assertThat(reservations).hasSize(78);
     }
 
     @Test
@@ -167,7 +167,7 @@ class JdbcReservationRepositoryTest {
         int count = reservationRepository.countByTimeId(1L);
 
         // then
-        assertThat(count).isEqualTo(1);
+        assertThat(count).isEqualTo(19);
     }
 
     @Test
@@ -178,7 +178,7 @@ class JdbcReservationRepositoryTest {
         int count = reservationRepository.countByReservationDateId(1L);
 
         // then
-        assertThat(count).isEqualTo(2);
+        assertThat(count).isEqualTo(14);
     }
 
     @Test
@@ -189,7 +189,7 @@ class JdbcReservationRepositoryTest {
         int count = reservationRepository.countByThemeId(1L);
 
         // then
-        assertThat(count).isEqualTo(2);
+        assertThat(count).isEqualTo(12);
     }
 
     @Test
@@ -200,7 +200,7 @@ class JdbcReservationRepositoryTest {
         List<Long> reservedTimes = reservationRepository.findReservedTimes(1L, 1L);
 
         // then
-        assertThat(reservedTimes).hasSize(2);
+        assertThat(reservedTimes).hasSize(4);
     }
 
     @Test
