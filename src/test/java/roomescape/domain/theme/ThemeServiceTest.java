@@ -3,98 +3,147 @@ package roomescape.domain.theme;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import roomescape.domain.reservation.Reservation;
-import roomescape.domain.reservation.ReservationRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.jdbc.SqlMergeMode;
+import org.springframework.transaction.annotation.Transactional;
+import roomescape.domain.theme.dto.AdminThemeResponse;
 import roomescape.domain.theme.dto.ThemeCreationRequest;
 import roomescape.domain.theme.dto.ThemeCreationResponse;
+import roomescape.domain.theme.dto.ThemeRankResponse;
 import roomescape.domain.theme.dto.ThemeResponse;
 import roomescape.support.exception.RoomescapeException;
+import roomescape.support.exception.ThemeErrorCode;
 
+@Transactional
+@SpringBootTest
+@Sql("/truncate.sql")
+@SqlMergeMode(SqlMergeMode.MergeMode.MERGE)
 class ThemeServiceTest {
 
+    @Autowired
     private ThemeService themeService;
-    private FakeThemeRepository themeRepository;
-    private FakeReservationRepository reservationRepository;
 
-    @BeforeEach
-    void setUp() {
-        themeRepository = new FakeThemeRepository();
-        reservationRepository = new FakeReservationRepository();
-        themeService = new ThemeService(themeRepository, reservationRepository);
-    }
+    @DisplayName("성공 케이스")
+    @Nested
+    class Success {
 
-    @Test
-    @DisplayName("테마를 생성한다.")
-    void createTheme() {
-        ThemeCreationRequest request = new ThemeCreationRequest("테마", "설명", "url");
-        
-        ThemeCreationResponse response = themeService.createTheme(request);
+        @Test
+        @DisplayName("새로운 테마를 생성한다.")
+        void createTheme() {
+            // given
+            ThemeCreationRequest request = new ThemeCreationRequest("새로운 테마", "새로운 설명", "new.jpg");
 
-        assertThat(response.name()).isEqualTo("테마");
-        assertThat(themeRepository.findAll()).hasSize(1);
-    }
+            // when
+            ThemeCreationResponse response = themeService.createTheme(request);
 
-    @Test
-    @DisplayName("사용 중인 테마를 삭제하려 하면 예외가 발생한다.")
-    void deleteInUseTheme() {
-        Theme theme = themeRepository.save(Theme.createWithoutId("테마", "설명", "url"));
-        reservationRepository.setCount(1);
-
-        assertThatThrownBy(() -> themeService.deleteTheme(theme.getId()))
-            .isInstanceOf(RoomescapeException.class);
-    }
-
-    @Test
-    @DisplayName("인기 테마 순위를 조회한다.")
-    void getThemeRank() {
-        themeRepository.save(Theme.createWithoutId("테마1", "설명", "url"));
-        
-        var responses = themeService.getThemeRank();
-
-        assertThat(responses).isNotNull();
-    }
-
-    private static class FakeThemeRepository implements ThemeRepository {
-        private final List<Theme> themes = new ArrayList<>();
-        private Long idCounter = 1L;
-
-        @Override
-        public Optional<Theme> findById(Long id) { return themes.stream().filter(t -> t.getId().equals(id)).findFirst(); }
-        @Override
-        public List<Theme> findAll() { return themes; }
-        @Override
-        public Theme save(Theme theme) {
-            Theme saved = Theme.of(idCounter++, theme.getName(), theme.getContent(), theme.getUrl());
-            themes.add(saved);
-            return saved;
+            // then
+            assertThat(response.name()).isEqualTo("새로운 테마");
+            assertThat(response.content()).isEqualTo("새로운 설명");
         }
-        @Override
-        public int deleteById(Long id) { return themes.removeIf(t -> t.getId().equals(id)) ? 1 : 0; }
-        @Override
-        public List<Theme> findPopularThemes(int limit, LocalDate start, LocalDate end) { return themes; }
+
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("사용자용 전체 테마 목록을 조회한다.")
+        void getAllTheme() {
+            // when
+            List<ThemeResponse> responses = themeService.getAllTheme();
+
+            // then
+            assertThat(responses).hasSize(12);
+            assertThat(responses).extracting(ThemeResponse::name)
+                .contains("정조 대왕의 비밀", "이순신의 한산도");
+        }
+
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("관리자용 전체 테마 목록을 조회한다.")
+        void getAllThemeForAdmin() {
+            // when
+            List<AdminThemeResponse> responses = themeService.getAllThemeForAdmin();
+
+            // then
+            assertThat(responses).hasSize(12);
+            assertThat(responses).extracting(AdminThemeResponse::name)
+                .contains("정조 대왕의 비밀", "이순신의 한산도");
+        }
+
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("인기 테마 랭킹을 조회한다.")
+        void getThemeRank() {
+            // when
+            List<ThemeRankResponse> responses = themeService.getThemeRank();
+
+            // then
+            assertThat(responses).hasSize(10);
+            assertThat(responses.get(0).name()).isEqualTo("정조 대왕의 비밀");
+            assertThat(responses.get(1).name()).isEqualTo("이순신의 한산도");
+            assertThat(responses).extracting(ThemeRankResponse::name)
+                .doesNotContain("테마11", "테마12");
+        }
+
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("ID로 테마를 조회한다.")
+        void findById() {
+            // when
+            Theme theme = themeService.findById(1L);
+
+            // then
+            assertThat(theme.getName()).isEqualTo("정조 대왕의 비밀");
+        }
+
+        @Test
+        @DisplayName("예약이 없는 테마를 삭제한다.")
+        void deleteTheme() {
+            // given
+            ThemeCreationResponse created = themeService.createTheme(new ThemeCreationRequest("삭제될 테마", "설명", "url"));
+
+            // when
+            themeService.deleteTheme(created.id());
+
+            // then
+            List<ThemeResponse> allThemes = themeService.getAllTheme();
+            assertThat(allThemes).isEmpty();
+        }
     }
 
-    private static class FakeReservationRepository implements ReservationRepository {
-        private int count = 0;
-        public void setCount(int count) { this.count = count; }
-        @Override public int countByThemeId(Long id) { return count; }
-        
-        @Override public Reservation save(Reservation r) { return null; }
-        @Override public List<Reservation> findAll() { return null; }
-        @Override public int deleteById(Long id) { return 0; }
-        @Override public int countByTimeId(Long id) { return 0; }
-        @Override public int countByReservationDateId(Long id) { return 0; }
-        @Override public List<Long> findReservedTimes(Long themeId, Long dateId) { return null; }
-        @Override public List<Reservation> findByName(String name) { return null; }
-        @Override public Optional<Reservation> findById(Long id) { return Optional.empty(); }
-        @Override public int updateReservation(Long id, Long d, Long t) { return 0; }
-        @Override public boolean existsByDateIdAndTimeIdAndThemeId(Long d, Long t, Long th) { return false; }
+    @DisplayName("실패 케이스")
+    @Nested
+    class Fail {
+
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("예약이 존재하는 테마를 삭제하면 예외가 발생한다.")
+        void deleteThemeInUse() {
+            // when & then
+            assertThatThrownBy(() -> themeService.deleteTheme(1L))
+                .isInstanceOf(RoomescapeException.class)
+                .extracting("errorCode")
+                .isEqualTo(ThemeErrorCode.THEME_IN_USE);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 ID의 테마를 삭제해도 예외는 발생하지 않는다.")
+        void deleteThemeNotFound() {
+            // when & then
+            themeService.deleteTheme(999L);
+        }
+
+        @Test
+        @DisplayName("존재하지 않는 ID의 테마를 조회하면 예외가 발생한다.")
+        void findByIdNotFound() {
+            // when & then
+            assertThatThrownBy(() -> themeService.findById(999L))
+                .isInstanceOf(RoomescapeException.class)
+                .extracting("errorCode")
+                .isEqualTo(ThemeErrorCode.THEME_NOT_EXIST);
+        }
     }
 }
