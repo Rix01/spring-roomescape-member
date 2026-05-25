@@ -4,171 +4,137 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import roomescape.domain.reservation.Reservation;
-import roomescape.domain.reservation.ReservationRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.jdbc.SqlMergeMode;
+import org.springframework.transaction.annotation.Transactional;
+import roomescape.domain.reservationdate.dto.AdminReservationDateResponse;
 import roomescape.domain.reservationdate.dto.ReservationDateCreationRequest;
 import roomescape.domain.reservationdate.dto.ReservationDateCreationResponse;
 import roomescape.domain.reservationdate.dto.ReservationDateResponse;
+import roomescape.support.exception.ReservationDateErrorCode;
 import roomescape.support.exception.RoomescapeException;
 
+@Transactional
+@SpringBootTest
+@Sql("/truncate.sql")
+@SqlMergeMode(SqlMergeMode.MergeMode.MERGE)
 class ReservationDateServiceTest {
 
+    @Autowired
     private ReservationDateService reservationDateService;
-    private FakeReservationDateRepository reservationDateRepository;
-    private FakeReservationRepository reservationRepository;
 
-    @BeforeEach
-    void setUp() {
-        reservationDateRepository = new FakeReservationDateRepository();
-        reservationRepository = new FakeReservationRepository();
-        reservationDateService = new ReservationDateService(reservationRepository, reservationDateRepository);
-    }
+    @DisplayName("성공 케이스")
+    @Nested
+    class SuccessCases {
 
-    @Test
-    @DisplayName("예약 날짜를 생성한다.")
-    void createReservationDate() {
-        ReservationDateCreationRequest request = new ReservationDateCreationRequest(LocalDate.now().plusDays(1));
+        @Test
+        @DisplayName("새로운 예약 날짜를 생성한다.")
+        void createReservationDate() {
+            // given
+            LocalDate newDate = LocalDate.now().plusDays(10);
+            ReservationDateCreationRequest request = new ReservationDateCreationRequest(newDate);
 
-        ReservationDateCreationResponse response = reservationDateService.createReservationDate(request);
+            // when
+            ReservationDateCreationResponse response = reservationDateService.createReservationDate(request);
 
-        assertThat(response.playDay()).isEqualTo(request.playDay());
-        assertThat(reservationDateRepository.findAll()).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("중복된 날짜 생성 시 예외가 발생한다.")
-    void createDuplicateDate() {
-        LocalDate playDay = LocalDate.now().plusDays(1);
-        reservationDateService.createReservationDate(new ReservationDateCreationRequest(playDay));
-
-        assertThatThrownBy(
-            () -> reservationDateService.createReservationDate(new ReservationDateCreationRequest(playDay)))
-            .isInstanceOf(RoomescapeException.class);
-    }
-
-    @Test
-    @DisplayName("오늘 이후의 날짜만 조회한다.")
-    void getAllAvailableReservationDate() {
-        reservationDateRepository.save(ReservationDate.createWithoutId(LocalDate.now().minusDays(1)));
-        reservationDateRepository.save(ReservationDate.createWithoutId(LocalDate.now().plusDays(1)));
-
-        List<ReservationDateResponse> responses = reservationDateService.getAllAvailableReservationDate();
-
-        assertThat(responses).hasSize(1);
-        assertThat(responses.get(0).playDay()).isEqualTo(LocalDate.now().plusDays(1));
-    }
-
-    @Test
-    @DisplayName("사용 중인 날짜를 삭제하려 하면 예외가 발생한다.")
-    void deleteInUseDate() {
-        ReservationDate date = reservationDateRepository.save(
-            ReservationDate.createWithoutId(LocalDate.now().plusDays(1)));
-        reservationRepository.setCount(1);
-
-        assertThatThrownBy(() -> reservationDateService.deleteReservationDate(date.getId()))
-            .isInstanceOf(RoomescapeException.class);
-    }
-
-    private static class FakeReservationDateRepository implements ReservationDateRepository {
-
-        private final List<ReservationDate> dates = new ArrayList<>();
-        private Long idCounter = 1L;
-
-        @Override
-        public Optional<ReservationDate> findById(Long id) {
-            return dates.stream().filter(d -> d.getId().equals(id)).findFirst();
+            // then
+            assertThat(response.playDay()).isEqualTo(newDate);
         }
 
-        @Override
-        public List<ReservationDate> findAll() {
-            return dates;
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("사용자용 예약 가능 날짜 목록을 조회한다.")
+        void getAllAvailableReservationDate() {
+            // when
+            List<ReservationDateResponse> responses = reservationDateService.getAllAvailableReservationDate();
+
+            // then
+            assertThat(responses).hasSize(7);
+            assertThat(responses).extracting(ReservationDateResponse::playDay)
+                .contains(LocalDate.now().minusDays(1), LocalDate.now().minusDays(7));
         }
 
-        @Override
-        public ReservationDate save(ReservationDate reservationDate) {
-            ReservationDate saved = ReservationDate.of(idCounter++, reservationDate.getPlayDay());
-            dates.add(saved);
-            return saved;
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("관리자용 전체 예약 날짜 목록을 조회한다.")
+        void getAllReservationDateForAdmin() {
+            // when
+            List<AdminReservationDateResponse> responses = reservationDateService.getAllReservationDateForAdmin();
+
+            // then
+            assertThat(responses).hasSize(7);
         }
 
-        @Override
-        public int deleteById(Long id) {
-            return dates.removeIf(d -> d.getId().equals(id)) ? 1 : 0;
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("ID로 예약 날짜를 조회한다.")
+        void findById() {
+            // when
+            ReservationDate reservationDate = reservationDateService.findById(1L);
+
+            // then
+            assertThat(reservationDate.getPlayDay()).isEqualTo(LocalDate.now().minusDays(1));
         }
 
-        @Override
-        public boolean existsByPlayDay(LocalDate playDay) {
-            return dates.stream().anyMatch(d -> d.getPlayDay().equals(playDay));
+        @Test
+        @DisplayName("예약이 없는 날짜를 삭제한다.")
+        void deleteReservationDate() {
+            // given
+            ReservationDateCreationResponse created = reservationDateService.createReservationDate(
+                new ReservationDateCreationRequest(LocalDate.now().plusDays(10)));
+
+            // when
+            reservationDateService.deleteReservationDate(created.id());
+
+            // then
+            assertThat(reservationDateService.getAllReservationDateForAdmin()).isEmpty();
         }
     }
 
-    private static class FakeReservationRepository implements ReservationRepository {
+    @DisplayName("실패 케이스")
+    @Nested
+    class FailCases {
 
-        private int count = 0;
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("중복된 날짜를 생성하면 예외가 발생한다.")
+        void createDuplicateDate() {
+            // given
+            LocalDate duplicatedDate = LocalDate.now().minusDays(1);
+            ReservationDateCreationRequest request = new ReservationDateCreationRequest(duplicatedDate);
 
-        public void setCount(int count) {
-            this.count = count;
+            // when & then
+            assertThatThrownBy(() -> reservationDateService.createReservationDate(request))
+                .isInstanceOf(RoomescapeException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReservationDateErrorCode.RESERVATION_DATE_DUPLICATED);
         }
 
-        @Override
-        public int countByReservationDateId(Long dateId) {
-            return count;
+        @Test
+        @Sql("/reservation.sql")
+        @DisplayName("예약이 존재하는 날짜를 삭제하면 예외가 발생한다.")
+        void deleteDateInUse() {
+            // when & then
+            assertThatThrownBy(() -> reservationDateService.deleteReservationDate(1L))
+                .isInstanceOf(RoomescapeException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReservationDateErrorCode.RESERVATION_DATE_IN_USE);
         }
 
-        @Override
-        public Reservation save(Reservation r) {
-            return null;
-        }
-
-        @Override
-        public List<Reservation> findAll() {
-            return null;
-        }
-
-        @Override
-        public int deleteById(Long id) {
-            return 0;
-        }
-
-        @Override
-        public int countByTimeId(Long id) {
-            return 0;
-        }
-
-        @Override
-        public List<Long> findReservedTimes(Long themeId, Long dateId) {
-            return null;
-        }
-
-        @Override
-        public int countByThemeId(Long id) {
-            return 0;
-        }
-
-        @Override
-        public List<Reservation> findByName(String name) {
-            return null;
-        }
-
-        @Override
-        public Optional<Reservation> findById(Long id) {
-            return Optional.empty();
-        }
-
-        @Override
-        public int updateReservation(Long id, Long d, Long t) {
-            return 0;
-        }
-
-        @Override
-        public boolean existsByDateIdAndTimeIdAndThemeId(Long d, Long t, Long th) {
-            return false;
+        @Test
+        @DisplayName("존재하지 않는 ID의 날짜를 조회하면 예외가 발생한다.")
+        void findByIdNotFound() {
+            // when & then
+            assertThatThrownBy(() -> reservationDateService.findById(999L))
+                .isInstanceOf(RoomescapeException.class)
+                .extracting("errorCode")
+                .isEqualTo(ReservationDateErrorCode.RESERVATION_DATE_NOT_EXIST);
         }
     }
 }
