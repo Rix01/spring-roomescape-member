@@ -55,9 +55,7 @@ class ReservationDateServiceTest {
             List<ReservationDateResponse> responses = reservationDateService.getAllAvailableReservationDate();
 
             // then
-            assertThat(responses).hasSize(7);
-            assertThat(responses).extracting(ReservationDateResponse::playDay)
-                .contains(LocalDate.now().minusDays(1), LocalDate.now().minusDays(7));
+            assertThat(responses).isEmpty();
         }
 
         @Test
